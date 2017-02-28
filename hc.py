@@ -1,3 +1,6 @@
+import numpy as np
+from scipy.spatial import distance
+
 
 
 file = open('in.data', 'r')
@@ -15,6 +18,22 @@ class Video(object):
         else:
             self.endpoints[endpoint] += reqs
 
+    def to_vec(self, length):
+        arr = np.zeros(length, dtype=np.int32)
+        for k, v in self.endpoints.iteritems():
+            arr[k] = 1
+        return arr
+
+    def popularity(self):
+        acc = 0
+        for k, v in self.endpoints.iteritems():
+            acc += v
+        return acc
+
+
+    def __cmp__(self, other):
+        return self.popularity() - other.popularity()
+
     def __str__(self):
         s = 'video %d: size %d [' % (self.vid, self.size)
         for k, v in self.endpoints.iteritems():
@@ -28,9 +47,23 @@ class Cache(object):
         self.cid = cid
         self.size = size
         self.endpoints = {}
+        self.videos = []
 
     def addendpoint(self, endpoint, latency):
         self.endpoints[endpoint] = latency
+
+    def put(self, video):
+        if self.size >= video.size:
+            self.size -= video.size
+            self.videos.append(video)
+            return True
+        return False
+
+    def to_vec(self, length):
+        arr = np.zeros(length, dtype=np.int32)
+        for k, v in self.endpoints.iteritems():
+            arr[k] = v
+        return arr
 
     def __str__(self):
         s = 'cache %d [' % self.cid
@@ -44,6 +77,9 @@ class Cache(object):
             return True
         return False
 
+    def __cmp__(self, other):
+        return self.popularity() - other.popularity()
+
 
 def parse(file):
     lines = []
@@ -51,13 +87,7 @@ def parse(file):
         if line != '\n':
             lines.append(line)
 
-    vidcount, eps, reqs, ccount, csize = lines[0].split(' ')
-
-    vidcount = int(vidcount)
-    eps = int(eps)
-    reqs = int(reqs)
-    ccount = int(ccount)
-    csize = int(csize)
+    vidcount, eps, reqs, ccount, csize = [int(e) for e in lines[0].split(' ')]
 
     print 'videos %d' % vidcount
     print 'endpoints %d' % eps
@@ -78,15 +108,11 @@ def parse(file):
     caches = {}
 
     for ep in range(eps):
-        latencyd, cachecount = lines[line].split(' ')
-        latencyd = int(latencyd)
+        latencyd, cachecount = [int(e) for e in lines[line].split(' ')]
         endpoints.append((ep, latencyd))
-        cachecount = int(cachecount)
         for c in range(cachecount):
             line += 1
-            cid, latency = lines[line].split(' ')
-            cid = int(cid)
-            latency = int(latency)
+            cid, latency = [int(e) for e in lines[line].split(' ')]
             if caches.get(cid) is None:
                 cache = Cache(cid, csize)
                 cache.addendpoint(ep, latency)
@@ -96,15 +122,29 @@ def parse(file):
 
         line += 1
 
-    for k, v in caches.iteritems():
-        print v
     
     for i in range(line, len(lines)):
         v, e, r = [int(e) for e in lines[i].split(' ')]
         videos[v].addendpoint(e, r)
 
-    for v in videos:
-        print v
+
+    return [v for v in videos if v.popularity() != 0], caches, endpoints
 
 
-parse(file)
+videos, caches, eps = parse(file)
+
+for k, v in caches.iteritems():
+    print 'cache %d vector:' % v.cid, v.to_vec(len(eps))
+
+videos = sorted(videos, reverse=True)
+
+for v in videos:
+    print 'video %d vector:' % v.vid, v.to_vec(len(eps)),\
+            ' %s' % v.popularity()
+for vid in videos:
+    for k, v in caches.iteritems():
+        print 'D(video %d, cache %d)' % (vid.vid, v.cid),\
+                distance.cosine(v.to_vec(len(eps)), vid.to_vec(len(eps)))
+    print '----'
+
+
